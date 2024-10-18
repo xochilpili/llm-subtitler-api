@@ -16,7 +16,7 @@ logger = Logger(log_file="app.log")
 # Envs
 HOST = os.getenv('LLM_HOST', "0.0.0.0")
 PORT = int(os.getenv('LLM_PORT', 4003))
-NOTIFICATION_URL = str(os.getenv("NOTIFICATION_SERVICE_URL", "http://192.168.105.105:4000/"))
+NOTIFICATION_URL = str(os.getenv("LLM_NOTIFICATION_SERVICE_URL", "http://192.168.105.105:4000/"))
 
 # Endpoint to download str file
 @app.route("/download", methods=["GET"])
@@ -99,7 +99,7 @@ def translateTask(file_path: str, output_lang: str) -> None:
     translator.translate_srt_file(srt_file=file_path, output_file=output_path)
     try:
         # Notify to service that translation is completed.
-        requests.post(NOTIFICATION_URL, json={"status":"task completed"}, timeout=0.001)
+        requests.post(NOTIFICATION_URL, json={"status":"task completed", "file": output_path}, timeout=0.001)
     except requests.exceptions.Timeout:
         logger.info("notification sent, no waiting for response.")
     logger.info(f"translation task completed for {file_path} from {lang} to {output_lang} saved in {output_path}.")
