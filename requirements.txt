@@ -8,3 +8,5 @@ datetime
 langdetect
 srt
 bs4
+sentencepiece
+sacremoses

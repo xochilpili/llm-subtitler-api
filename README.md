@@ -53,7 +53,7 @@ First validate that you've installed **nvidia-container-toolkit** in your host.
     # build image
     docker build -t llm-subtitler:main -f Dockerfile .
     # run built image as container
-    docker run --rm -p 4003:4003 llm-subtitler:main
+    docker run --rm --gpus all -p 4003:4003 llm-subtitler:main
 ```
 
 #### How to install nvidia-container-toolkit in F40

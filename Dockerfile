@@ -1,12 +1,12 @@
 # Base image with CUDA support
-FROM nvidia/cuda:12.6.2-cudnn-devel-ubuntu22.04
+FROM nvidia/cuda:12.6.2-cudnn-runtime-ubuntu22.04
 
 # Set environment variables
 ENV LLM_HOST=0.0.0.0
 ENV LLM_PORT=4003
 
 # Install system dependencies
-RUN apt-get update && apt-get install -y python3.9 python3-dev python3-pip build-essential
+RUN apt-get update && apt-get install -y python3.9 python3-dev python3-pip --no-install-recommends
 #RUN ln -s /usr/bin/python3.9 /usr/bin/python3
 RUN rm -rf /var/lib/apt/lists/*
 
