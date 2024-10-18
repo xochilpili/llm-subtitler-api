@@ -1,0 +1,5 @@
+media/
+models/
+.env
+*.log
+__pycache__

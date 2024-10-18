@@ -1,0 +1,10 @@
+Flask
+requests
+torch
+transformers
+whisper
+ffmpeg-python
+datetime
+langdetect
+srt
+bs4
