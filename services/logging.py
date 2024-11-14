@@ -1,32 +1,36 @@
 import logging
-from logging.handlers import RotatingFileHandler
 
 class Logger:
     _instance = None
 
-    def __new__(self, log_file='app.log'):
+    def __new__(self):
         if self._instance is None:
             self._instance = super(Logger, self).__new__(self)
-            self._instance._initialize_logger(log_file)
+            self._instance._initialize_logger()
         return self._instance
 
-    def _initialize_logger(self, log_file):
+    def _initialize_logger(self):
         # Logger Config
         self.logger = logging.getLogger(__name__)
         self.logger.setLevel(logging.INFO)
-
-        # rotation config
-        max_bytes = 5 * 1024 * 1024 # 5mb
-        # file handler
-        file_handler = RotatingFileHandler(log_file, maxBytes=max_bytes, backupCount=0) # no backup, if 2 will generate log.0, log.1
-        file_handler.setLevel(logging.INFO)
+        self.logger.propagate = False
 
         # format
         formatter = logging.Formatter('%(asctime)s [%(levelname)s] %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
-        file_handler.setFormatter(formatter)
-
+        
+        # rotation config
+        #max_bytes = 5 * 1024 * 1024 # 5mb
+        # file handler
+        #file_handler = RotatingFileHandler(log_file, maxBytes=max_bytes, backupCount=0) # no backup, if 2 will generate log.0, log.1
+        #file_handler.setLevel(logging.INFO)
+        #file_handler.setFormatter(formatter)
         # logger handler
-        self.logger.addHandler(file_handler)
+        #self.logger.addHandler(file_handler)
+        
+        # console handler
+        console_handler = logging.StreamHandler()
+        console_handler.setFormatter(formatter)
+        self.logger.addHandler(console_handler)
 
     def info(self, message: str) -> None:
         self.logger.info(message)

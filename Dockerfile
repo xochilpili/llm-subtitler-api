@@ -4,10 +4,17 @@ FROM nvidia/cuda:12.6.2-cudnn-runtime-ubuntu22.04
 # Set environment variables
 ENV LLM_HOST=0.0.0.0
 ENV LLM_PORT=4003
-
+ENV DEBIAN_FRONTEND=noninteractive 
 # Install system dependencies
-RUN apt-get update && apt-get install -y python3.9 python3-dev python3-pip --no-install-recommends
-#RUN ln -s /usr/bin/python3.9 /usr/bin/python3
+RUN apt update -y && apt upgrade -y && \
+    apt-get install -y wget build-essential checkinstall libncursesw5-dev libssl-dev libsqlite3-dev tk-dev libgdbm-dev libc6-dev libbz2-dev libffi-dev zlib1g-dev ffmpeg && \
+    cd /usr/src && \
+    wget https://www.python.org/ftp/python/3.9.9/Python-3.9.9.tgz && \
+    tar xzf Python-3.9.9.tgz && \
+    cd Python-3.9.9 && \
+    ./configure --enable-optimizations && \
+    make install
+
 RUN rm -rf /var/lib/apt/lists/*
 
 # Set up Python environment

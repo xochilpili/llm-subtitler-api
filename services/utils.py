@@ -28,10 +28,10 @@ class Utils:
     @staticmethod
     def detect_language(audio_file_path: str, samples_number=5):
         # Cargar el audio
-        audio = whisper.load_audio(audio_file_path)
+        audio = whisper.load_audio(f"{audio_file_path}")
 
         # Cargar el modelo de Whisper "base" (porque sólo queremos detectar el idioma del audio)
-        model = whisper.load_model("base", download_root="models", device="cuda")
+        model = whisper.load_model("base", download_root="media/models", device="cuda")
 
         # Optimización: si la longitud del audio es <= que el tamaño de chunk de Whisper, solo tomaremos 1 muestra
         if len(audio) <= whisper.audio.CHUNK_LENGTH * whisper.audio.SAMPLE_RATE:

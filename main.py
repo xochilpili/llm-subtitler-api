@@ -2,7 +2,8 @@ from flask import Flask, request, jsonify, send_from_directory
 import threading
 import requests
 import os
-from services import Logger, Translator, Transcriptor, Utils
+from services import Logger, Translator, Transcriptor, Utils, DBManager
+import gc
 
 app = Flask(__name__)
 UPLOAD_FOLDER = 'media'
@@ -10,19 +11,25 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 app.config['OUTPUT_FILE_SUFFIX'] = '.es.srt'
 
-logger = Logger(log_file="app.log")
-
+logger = Logger()
+db = DBManager(logger=logger, db_file="./media/tasks.db")
 
 # Envs
 HOST = os.getenv('LLM_HOST', "0.0.0.0")
 PORT = int(os.getenv('LLM_PORT', 4003))
-NOTIFICATION_URL = str(os.getenv("LLM_NOTIFICATION_SERVICE_URL", "http://192.168.105.33:4000/"))
+NOTIFICATION_URL = str(os.getenv("LLM_NOTIFICATION_SERVICE_URL", "http://192.168.105.105:4000/"))
+
+# Endpoint that process tasks
+@app.route("/processTask", methods=["GET"])
+def processTask():
+    thread = threading.Thread(target=processTasks,)
+    thread.start()
+    return jsonify({"message":"ok"}), 200
 
 # Endpoint to download str file
 @app.route("/download", methods=["GET"])
 def download_file():
     file_path = request.args.get("filename")
-    #output_path = os.path.splitext(file_path)[0] + app.config['OUTPUT_FILE_SUFFIX']
     logger.info(f"downloading file: {file_path}")
     
     if not file_path:
@@ -34,7 +41,7 @@ def download_file():
         return jsonify({"error": f"error {e}"})
 
 # Endpoint to translate from str to str
-@app.route("/translate", methods=["POST"])
+@app.route("/send_translate", methods=["POST"])
 def translate():
     logger.info("request for translate received")
     
@@ -65,12 +72,10 @@ def translate():
     logger.info(f"processing translation file: {file.filename}, with title: {title} for lang: {lang}")
     file_path = os.path.join(app.config['UPLOAD_FOLDER'], file.filename)
     file.save(file_path)
-    thread = threading.Thread(target=translateTask, args=(file_path,lang,title,destinationPath, ))
-    thread.start()
+    db.insert_task(('translate', lang, title, file_path, destinationPath))
     return jsonify({"message": "file saved", "path": file_path, "task": "translation created"}), 200
 
-
-@app.route("/transcript", methods=["POST"])
+@app.route("/send_transcript", methods=["POST"])
 def transcribe():
     logger.info("request for transcript received")
 
@@ -100,9 +105,23 @@ def transcribe():
 
     file_path = os.path.join(app.config['UPLOAD_FOLDER'], file.filename)
     file.save(file_path)
-    thread = threading.Thread(target=transcribeTask, args=(file_path, lang, title, destinationPath, ))
-    thread.start()
+    db.insert_task(('transcript', lang, title, file_path, destinationPath))
     return jsonify({"message": "file saved", "path": file_path, "task": "transcription created"}), 200
+
+def processTasks() -> None:
+    tasks = db.getTasks(query="select id, operation, language, title, file, destinationPath, process from tasks where process = ?", params=(0,))
+    for task in tasks:
+        logger.info(f"processing task {task['id']} for {task['operation']}")
+        if task['operation'] == 'transcript':
+            db.update_task_status(taskId=task['id'])
+            transcribeTask(task['file'], task['language'], task['title'], task['destinationPath'])
+        elif task['operation'] == 'translate':
+            db.update_task_status(taskId=task['id'])
+            translateTask(task['file'], task['language'], task['title'], task['destinationPath'])
+        else:
+            logger.error(f"operation {task['operation']} not supported.")
+        logger.info(f"end processing {task['operation']} task {task['id']}")
+        db.delete_task(taskId=task['id'])
 
 def translateTask(file_path: str, output_lang: str, title: str, destinationPath: str) -> None:
     # Detect source file language
@@ -119,13 +138,13 @@ def translateTask(file_path: str, output_lang: str, title: str, destinationPath:
     translator = Translator(logger=logger, model_name=model, device="cuda")
     translator.translate_srt_file(srt_file=file_path, output_file=output_path)
     try:
-        # remove original file
-        os.remove(file_path)
         # Notify to service that translation is completed.
         requests.post(NOTIFICATION_URL, json={"status":"task completed", "title": title, "file": output_path,  "destinationPath": destinationPath}, timeout=0.001)
     except requests.exceptions.Timeout:
         logger.info("notification sent, no waiting for response.")
     logger.info(f"translation task completed for {file_path} as title {title} from {lang} to {output_lang} saved in {output_path}.")
+    # garbage collect
+    gc.collect()
 
 def transcribeTask(file_path: str, output_lang:str, title: str, destinationPath: str) -> None:
     # detect source language
@@ -135,8 +154,13 @@ def transcribeTask(file_path: str, output_lang:str, title: str, destinationPath:
         return
     if audio_lang == output_lang:
         logger.error("source language and output language are the same.")
+        return 
     output_path = os.path.splitext(file_path)[0] + app.config['OUTPUT_FILE_SUFFIX']
     
+    logger.info(f"language detected {audio_lang} for {file_path}")
+    if not audio_lang or not output_lang:
+        logger.error(f"no language detected {audio_lang} or {output_lang}")
+        return
     # Setting Translation instance
     model = f"Helsinki-NLP/opus-mt-{audio_lang}-{output_lang}"
     translator = Translator(logger=logger, model_name=model, device="cuda")
@@ -144,15 +168,16 @@ def transcribeTask(file_path: str, output_lang:str, title: str, destinationPath:
     transcriptor = Transcriptor(logger=logger, translator=translator, device="cuda")
     transcriptor.transcript(language=audio_lang, audio_file=file_path, output_file=output_path)
     try:
-        # remove original audio file
-        os.remove(file_path)
         # send notification back when task finishes
         requests.post(NOTIFICATION_URL, json={"status": "task completed", "title": title, "file": output_path, "destinationPath": destinationPath}, timeout=0.001)
     except requests.exceptions.Timeout:
         logger.info("notification sent, no waiting for response.")
     logger.info(f"transcription completed for {file_path} as title: {title} from {audio_lang} to {output_lang} saved in {output_path}.")
-
+    # garbage collector
+    gc.collect()
 # init
 if __name__ == '__main__':
-    print(f"Notification Service: {NOTIFICATION_URL}")
-    app.run(host=HOST, port=PORT)
+    from waitress import serve
+    logger.info(f"Server starting at: http://{HOST}:{PORT}")
+    logger.info(f"Notification Service: {NOTIFICATION_URL}")
+    serve(app, host=HOST, port=PORT)

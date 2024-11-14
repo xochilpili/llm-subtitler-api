@@ -12,7 +12,7 @@ def print_ops(operation: str, device: str, lang_from: str, lang_to: str, input_f
     print(f"Output file: {output_file}")
 
 def main():
-    logger = Logger(log_file="cli.log")
+    logger = Logger()
     parser = argparse.ArgumentParser(prog="Transcriber", description='Transcribe audio files and generate subtitles')
     parser.add_argument('-t', '--transcript', help="transcript", type=bool)
     parser.add_argument('-tr', '--translate', help="translate", type=bool)

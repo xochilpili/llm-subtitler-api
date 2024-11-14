@@ -3,8 +3,11 @@ import whisper
 import srt
 import datetime
 import os
+import gc
 
 class Transcriptor:
+    
+    # TODO: Remove all "isCli"
 
     def __init__(self, logger, translator, device="cuda", is_cli=False):
         self.basePath = "media/vad_chunks"
@@ -22,7 +25,7 @@ class Transcriptor:
 
     def vad_run(self, audio_file: str):
         self.logger.info(f"running VAD...")
-        model, utils = torch.hub.load(repo_or_dir="snakers4/silero-vad", model="silero_vad", onnx=False)
+        model, utils = torch.hub.load(repo_or_dir="snakers4/silero-vad", model="silero_vad", onnx=False, trust_repo=True)
         (get_speech_timestamps, save_audio, read_audio, VADIterator, collect_chunks) = utils
         wav = read_audio(audio_file, sampling_rate=self.VAD_SR)
         t = get_speech_timestamps(wav, model, sampling_rate=self.VAD_SR, threshold=self.VAD_THRESHOLD)
@@ -68,6 +71,7 @@ class Transcriptor:
         self.logger.info(f"VAD generated {len(u)} chunk files.")
         # remove source file
         os.remove(audio_file)
+        self.logger.info(f"VAD removed source file {audio_file}")
         return u
     
     def transcript(self, language, audio_file: str, output_file: str):
@@ -78,18 +82,18 @@ class Transcriptor:
         subs = []
         sub_index = 1
         total_chunks = len(u)
-        self.logger.info(f"got total chunks: {total_chunks}")
         for i in range(len(u)):
             audio_chunk_file = self.basePath + "/" + str(i) + ".wav"
             
             if self.is_cli:
                 print(f"Processing : {i}/{total_chunks} file: {audio_chunk_file}")
+            self.logger.info(f"Processing: {i}/{total_chunks}")
             
             result = self.model.transcribe(audio_chunk_file, task="transcribe", language=language)
-            # Si no hay segmentos en la transcripción, saltar
+            # if not segments skip
             if len(result['segments']) == 0:
                 if self.is_cli:
-                    print(f"No se encontraron segmentos en el fragmento {audio_chunk_file}")
+                    print(f"no segments were found in {audio_chunk_file}")
                 continue
 
             for r in result["segments"]:
@@ -124,8 +128,11 @@ class Transcriptor:
                     )
                 )
                 sub_index += 1
-            # Eliminar archivo temporal
+            # remove chunk audio file
             os.remove(audio_chunk_file)
+            # clean up
+            torch.cuda.empty_cache()
+            gc.collect()
 
         with open(output_file, "w", encoding="utf-8") as f:
             f.write(srt.compose(subs))
